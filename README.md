@@ -6,6 +6,7 @@ A Terminal based query browser
 3. Table based result window
 4. Log window
 
+![Demo](img/yaktocat.png)
 
 ### Road Map
 
