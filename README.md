@@ -6,7 +6,7 @@ A Terminal based query browser
 3. Table based result window
 4. Log window
 
-![Demo](img/yaktocat.png)
+![Demo](https://github.com/vjega/tui-sql-browser/img/yaktocat.png)
 
 ### Road Map
 
