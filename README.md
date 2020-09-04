@@ -6,7 +6,7 @@ A Terminal based query browser
 3. Table based result window
 4. Log window
 
-![Demo](https://github.com/vjega/tui-sql-browser/img/demo.gif)
+![Demo](https://github.com/vjega/tui-sql-browser/blob/master/img/demo.gif)
 
 ### Road Map
 
