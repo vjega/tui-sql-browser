@@ -15,7 +15,7 @@ func makeResultWnd() *tview.Table {
 func makeTableWnd() *tview.TreeView {
 	res := tview.NewTreeView()
 	getTableInfo(res)
-	res.SetTitle(" [blue:white]^T[white:black] Tables ").SetBorder(true)
+	res.SetTitle(" [blue:white]^T[white:black] Tables [blue:white]F5[white:black] Refresh ").SetBorder(true)
 	return res
 
 }
@@ -37,7 +37,8 @@ func makeQueryWnd(resBox *tview.Table) *femto.View {
 		case tcell.KeyCtrlG:
 			runQuery(resBox)
 			return nil
-		case tcell.KeyCtrlQ:
+		case tcell.KeyCtrlL:
+			// load from disk
 			return nil
 		}
 		return event

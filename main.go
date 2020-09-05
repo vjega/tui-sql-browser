@@ -22,7 +22,7 @@ func main() {
 
 	// Window to show all the error and info details
 	LogWnd = makeLogWnd()
-	//LogWnd = logWnd
+
 	// Window to display result sets from select query
 	resWnd := makeResultWnd()
 
@@ -55,6 +55,9 @@ func main() {
 			return nil
 		case tcell.KeyCtrlL:
 			app.SetFocus(LogWnd)
+			return nil
+		case tcell.KeyF5:
+			getTableInfo(tblWnd)
 			return nil
 		case tcell.KeyCtrlX:
 			app.Stop()
