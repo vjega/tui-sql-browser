@@ -1,24 +1,57 @@
 package main
 
 import (
+	"flag"
+	"os"
+
 	"github.com/gdamore/tcell"
 	"github.com/pgavlin/femto"
 	"github.com/rivo/tview"
 )
 
-// LogWnd is a global version of logWnd
+// LogWnd is a global logging window
 var LogWnd *tview.TextView
+
+// TblWnd is a global window to show schema, table info
+var TblWnd *tview.TreeView
 
 // Query buffer
 var Query *femto.Buffer
 
+// Config Struct for connection string
+type Config struct {
+	driver string
+	host   string
+	port   string
+	user   string
+	pass   string
+	db     string
+}
+
+// Conf to keep the connection details at global level
+var Conf Config = Config{driver: "mysql", host: "localhost", port: "3306", user: "port", pass: "", db: ""}
+
 func main() {
+
+	//Parsing command line arguments. If not passed sqlite3 with test database will open
+	flag.StringVar(&Conf.driver, "d", "mysql", "mysql|sqlite")
+	flag.StringVar(&Conf.host, "h", "localhost", "host to connec to")
+	flag.StringVar(&Conf.port, "t", "3306", "port to connect")
+	flag.StringVar(&Conf.user, "u", "root", "db user")
+	flag.StringVar(&Conf.pass, "p", "", "password")
+	flag.StringVar(&Conf.db, "s", "", "Default Schema")
+	flag.Parse()
+
+	if !(Conf.driver == "mysql" || Conf.driver == "sqlite") {
+		flag.Usage()
+		os.Exit(0)
+	}
 
 	// A buffer to keep the query from and to mini editor
 	Query = femto.NewBufferFromString("", "test.sql")
 
 	// Window to show all the tables
-	tblWnd := makeTableWnd()
+	TblWnd = makeTableWnd()
 
 	// Window to show all the error and info details
 	LogWnd = makeLogWnd()
@@ -37,10 +70,9 @@ func main() {
 
 	// Create two flex box. 1. Table View 2. All the three boxes
 	mainflex := tview.NewFlex().
-		AddItem(tblWnd, 0, 1, false).
+		AddItem(TblWnd, 0, 1, false).
 		AddItem(innerfx, 0, 4, false)
 	resWnd.SetTitle(" Result ").SetBorder(true)
-
 	// Create App
 	app := tview.NewApplication()
 
@@ -48,16 +80,13 @@ func main() {
 	app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		switch event.Key() {
 		case tcell.KeyCtrlT:
-			app.SetFocus(tblWnd)
+			app.SetFocus(TblWnd)
 			return nil
 		case tcell.KeyCtrlQ:
 			app.SetFocus(qryEditor)
 			return nil
 		case tcell.KeyCtrlL:
 			app.SetFocus(LogWnd)
-			return nil
-		case tcell.KeyF5:
-			getTableInfo(tblWnd)
 			return nil
 		case tcell.KeyCtrlX:
 			app.Stop()
