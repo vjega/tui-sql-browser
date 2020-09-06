@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/gdamore/tcell"
 	"github.com/pgavlin/femto"
 	"github.com/pgavlin/femto/runtime"
@@ -14,8 +16,13 @@ func makeResultWnd() *tview.Table {
 
 func makeTableWnd() *tview.TreeView {
 	res := tview.NewTreeView()
-	getTableInfo(res)
-	res.SetTitle(" [blue:white]^T[white:black] Tables [blue:white]F5[white:black] Refresh ").SetBorder(true)
+	if Conf.driver == "sqlite" {
+		getSQLiteTableInfo(res)
+	}
+	if Conf.driver == "mysql" {
+		getMySQLTableInfo(res)
+	}
+	res.SetTitle(" [blue:white]^T[white:black] Tables [blue:white] ").SetBorder(true)
 	return res
 
 }
@@ -44,7 +51,7 @@ func makeQueryWnd(resBox *tview.Table) *femto.View {
 		return event
 	})
 
-	editor.SetBorder(true).SetTitle(" [blue:white]^Q[white:black] Query Window  [blue:white]^G[white:black] RUN QUERY [red:white]^X[white:black] EXIT")
+	editor.SetBorder(true).SetTitle(fmt.Sprintf(" [blue:white]%s[white:black:] [blue:white]^Q[white:black] Query Window  [blue:white]^G[white:black] RUN QUERY [red:white]^X[white:black] EXIT", Conf.driver))
 
 	return editor
 }

@@ -3,13 +3,55 @@ package main
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/gdamore/tcell"
 
+	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/mattn/go-sqlite3"
+
 	"github.com/rivo/tview"
 )
+
+func isDDL(s string) bool {
+	ddl := [4]string{"USE", "CREATE", "ALTER", "DROP"}
+	res := false
+	for _, v := range ddl {
+		res = strings.HasPrefix(strings.ToUpper(s), v)
+		if res {
+			return res
+		}
+	}
+	return res
+}
+
+func opensqlitedb() *sql.DB {
+	if Conf.db == "" {
+		Conf.db = "test.db"
+	}
+	conn, err := sql.Open("sqlite3", Conf.db)
+	if err != nil {
+		panic(err)
+	}
+	return conn
+}
+
+func openmysqldb() *sql.DB {
+	var dsn string
+	if Conf.host == "localhost" {
+		dsn = fmt.Sprintf("%s:%s@/%s", Conf.user, Conf.pass, Conf.db)
+	} else {
+		dsn = fmt.Sprintf("%s:%s@tcp(%s:%s)/%s", Conf.user, Conf.pass, Conf.host, Conf.port, Conf.db)
+	}
+	conn, err := sql.Open("mysql", dsn)
+	if err != nil {
+		panic(err)
+	}
+	return conn
+}
+
+// db, err := sql.Open("mysql", "user:password@/dbname")
 
 func renderRes(resWind *tview.Table, header []string, result [][]string, rowcnt, colcnt int) {
 	resWind.Clear()
@@ -42,6 +84,20 @@ func info2Log(msg string) {
 	LogWnd.Write([]byte("\n"))
 }
 
+func getCurrentDB(conn *sql.DB) string {
+	dbcurrdb, err := conn.Query("SELECT IFNULL(DATABASE(),'')")
+	if err != nil {
+		panic(err)
+	}
+
+	currdbres, _, err := getResult(dbcurrdb, 1)
+	if err != nil {
+		panic(err)
+	}
+
+	return currdbres[0][0]
+}
+
 func getColumnMeta(rows *sql.Rows) ([]string, []string, int, error) {
 
 	var header []string
@@ -69,19 +125,27 @@ func getColumnMeta(rows *sql.Rows) ([]string, []string, int, error) {
 func getResult(rows *sql.Rows, colcnt int) ([][]string, int, error) {
 	var result [][]string
 	var rowcnt int = 0
-	readCols := make([]interface{}, colcnt)
-	writeCols := make([]string, colcnt)
-	for i := range writeCols {
-		readCols[i] = &writeCols[i]
-	}
+	values := make([]interface{}, colcnt)
+	valuePtrs := make([]interface{}, colcnt)
+	columns, _ := rows.Columns()
 	for rows.Next() {
-		var temp []string
-		err := rows.Scan(readCols...)
-		if err != nil {
-			return nil, 0, err
+		for i := range columns {
+			valuePtrs[i] = &values[i]
 		}
-		for i := 0; i < colcnt; i++ {
-			temp = append(temp, writeCols[i])
+		rows.Scan(valuePtrs...)
+		var temp []string
+		for i := range columns {
+			val := values[i]
+
+			b, ok := val.([]byte)
+			var v string
+			if ok {
+				v = string(b)
+			} else {
+				v = "NULL"
+			}
+			temp = append(temp, v)
+			//fmt.Println(col, v)
 		}
 		result = append(result, temp)
 		rowcnt++
@@ -89,10 +153,14 @@ func getResult(rows *sql.Rows, colcnt int) ([][]string, int, error) {
 	return result, rowcnt, nil
 }
 
-func getTableInfo(t *tview.TreeView) {
-	database, err := sql.Open("sqlite3", "./test.db")
-	rows, err := database.Query("SELECT name FROM sqlite_schema WHERE type='table';")
+func getSQLiteTableInfo(t *tview.TreeView) {
+	var conn *sql.DB
+	if Conf.driver == "sqlite" {
+		conn = opensqlitedb()
+	}
+	rows, err := conn.Query("SELECT name FROM sqlite_schema WHERE type='table';")
 	if err != nil {
+		panic(err)
 		return
 	}
 
@@ -104,7 +172,7 @@ func getTableInfo(t *tview.TreeView) {
 	for i := 0; i < rowcnt; i++ {
 		temp := tview.NewTreeNode(result[i][0]).SetSelectable(true).SetExpanded(false)
 		temp.SetSelectedFunc(func() { temp.SetExpanded(!temp.IsExpanded()) })
-		rows, err := database.Query(fmt.Sprintf("SELECT * FROM %s LIMIT 0;", result[i][0]))
+		rows, err := conn.Query(fmt.Sprintf("SELECT * FROM %s LIMIT 0;", result[i][0]))
 		if err != nil {
 			return
 		}
@@ -120,27 +188,99 @@ func getTableInfo(t *tview.TreeView) {
 		root.AddChild(temp)
 	}
 	t.SetRoot(root)
-	database.Close()
+}
+
+func getMySQLTableInfo(t *tview.TreeView) {
+
+	// Run the query to get the list of databases
+	var conn *sql.DB
+	if Conf.driver == "mysql" {
+		conn = openmysqldb()
+	}
+
+	dbrows, err := conn.Query("SHOW SCHEMAS;")
+	if err != nil {
+		panic(err)
+	}
+
+	dbresult, rowcnt, err := getResult(dbrows, 1)
+	if err != nil {
+		panic(err)
+	}
+
+	// Get the current active db if it is not set
+	if Conf.db == "" {
+		Conf.db = getCurrentDB(conn)
+	}
+
+	root := tview.NewTreeNode("Databases").SetSelectable(false)
+	for i := 0; i < rowcnt; i++ {
+		if dbresult[i][0] == "mysql" || dbresult[i][0] == "information_schema" ||
+			dbresult[i][0] == "performance_schema" || dbresult[i][0] == "sys" {
+			continue
+		}
+		var temp *tview.TreeNode
+		if Conf.db == dbresult[i][0] {
+			temp = tview.NewTreeNode("(*)" + dbresult[i][0])
+		} else {
+			temp = tview.NewTreeNode(dbresult[i][0])
+		}
+		temp.SetSelectable(true).SetExpanded(false).SetSelectedFunc(func() { temp.SetExpanded(!temp.IsExpanded()) })
+		tblRows, err := conn.Query(fmt.Sprintf("SELECT Table_name as TablesName from information_schema.tables"+
+			" WHERE table_schema = '%s';", dbresult[i][0]))
+		if err != nil {
+			return
+		}
+		tblresult, rowcnt2, err := getResult(tblRows, 1)
+		if err != nil {
+			return
+		}
+		for j := 0; j < rowcnt2; j++ {
+			temp2 := tview.NewTreeNode(tblresult[j][0]).SetSelectable(true).SetExpanded(false)
+			temp2.SetSelectedFunc(func() { temp2.SetExpanded(!temp2.IsExpanded()) })
+			clmRows, err := conn.Query(fmt.Sprintf("SELECT * FROM `%s`.`%s` LIMIT 0;", dbresult[i][0], tblresult[j][0]))
+			if err != nil {
+				return
+			}
+			_ = clmRows
+			header, coltype, cnt, err := getColumnMeta(clmRows)
+			if err != nil {
+				return
+			}
+			for i := 0; i < cnt; i++ {
+				temp2.AddChild(tview.NewTreeNode(fmt.Sprintf("%s %s", header[i], coltype[i])).SetSelectable(false).SetColor(tcell.ColorYellowGreen))
+			}
+			temp.AddChild(temp2)
+		}
+
+		// Display ad a new nodes
+		root.AddChild(temp)
+	}
+	t.SetRoot(root)
 }
 
 func runQuery(resWind *tview.Table) {
+	var conn *sql.DB
 
-	// Open Database
-	database, err := sql.Open("sqlite3", "./test.db")
-	if err != nil {
-		err2Log(err)
-		return
+	if Conf.driver == "mysql" {
+		conn = openmysqldb()
+	}
+	if Conf.driver == "sqlite" {
+		conn = opensqlitedb()
 	}
 
 	start := time.Now()
 
 	// Execute Query
-	rows, err := database.Query(Query.String())
+	rows, err := conn.Query(Query.String())
 	if err != nil {
 		err2Log(err)
 		return
 	}
 
+	if err != nil {
+		panic(err)
+	}
 	// Get Column names, Column Types, Column Count
 	header, _, colcnt, err := getColumnMeta(rows) // column type not needed
 	if err != nil {
@@ -159,9 +299,16 @@ func runQuery(resWind *tview.Table) {
 	// Show the result in the result window
 	renderRes(resWind, header, result, rowcnt, colcnt)
 
+	// Update table info for DDL queries
+	if isDDL(Query.String()) {
+		if Conf.driver == "mysql" {
+			Conf.db = getCurrentDB(conn)
+			getMySQLTableInfo(TblWnd)
+		}
+		if Conf.driver == "sqlite" {
+			getSQLiteTableInfo(TblWnd)
+		}
+	}
 	info2Log(fmt.Sprintf("Fetched %v rows", rowcnt))
 	info2Log(fmt.Sprintf("Query executed in %v", end.Sub(start)))
-
-	// Finally close the db connection
-	database.Close()
 }
